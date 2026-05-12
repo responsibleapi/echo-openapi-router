@@ -15,9 +15,9 @@ tasks:
 
   test:coverage:
     run: once
-    sources:
-      - '*.go'
-      - go.sum
+    # sources:
+    #   - '*.go'
+    #   - go.sum
     cmd: go test -coverprofile=coverage.out ./...
 
   lint:
