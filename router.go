@@ -108,23 +108,19 @@ func (builder *RouterBuilder) CreateRouter() (*echo.Echo, error) {
 }
 
 func (builder *RouterBuilder) Mount(e *echo.Echo) error {
-	if e == nil {
-		return errors.New("echo instance cannot be nil")
-	}
-	return builder.mountGroup(e.Group(""), "")
+	return builder.mount(e, "")
 }
 
 func (builder *RouterBuilder) MountAt(e *echo.Echo, prefix string) error {
+	return builder.mount(e, prefix)
+}
+
+func (builder *RouterBuilder) mount(e *echo.Echo, prefix string) error {
 	if e == nil {
 		return errors.New("echo instance cannot be nil")
 	}
-	return builder.mountGroup(e.Group(prefix), prefix)
-}
 
-func (builder *RouterBuilder) mountGroup(group *echo.Group, prefix string) error {
-	if group == nil {
-		return errors.New("echo group cannot be nil")
-	}
+	group := e.Group(prefix)
 	for _, middleware := range builder.rootMiddlewares {
 		group.Use(middleware)
 	}

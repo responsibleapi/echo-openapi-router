@@ -13,6 +13,13 @@ tasks:
       - go.sum
     cmd: go test ./...
 
+  test:coverage:
+    run: once
+    sources:
+      - '*.go'
+      - go.sum
+    cmd: go test -coverprofile=coverage.out ./...
+
   lint:
     sources:
       - '*.go'

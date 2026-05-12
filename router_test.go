@@ -290,29 +290,52 @@ func TestBuilderMountsRoutesAtRootWithRequestLogger(t *testing.T) {
 func TestBuilderMountsRoutesAtPrefix(t *testing.T) {
 	t.Parallel()
 
-	builder := newTestBuilder(t)
-	addTestSecurity(t, builder)
-	builder.AddRoute("createPet", func(c *echo.Context) error {
-		return c.NoContent(http.StatusCreated)
-	})
-
-	e := echo.New()
-	if err := builder.MountAt(e, "/api"); err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name       string
+		body       string
+		wantStatus int
+	}{
+		{
+			name:       "valid request",
+			body:       `{"name":"fido"}`,
+			wantStatus: http.StatusCreated,
+		},
+		{
+			name:       "invalid request",
+			body:       `{"wrong":"field"}`,
+			wantStatus: http.StatusBadRequest,
+		},
 	}
 
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(
-		context.Background(),
-		http.MethodPost,
-		"/api/pets",
-		bytes.NewBufferString(`{"name":"fido"}`),
-	)
-	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-	e.ServeHTTP(rec, req)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+			builder := newTestBuilder(t)
+			addTestSecurity(t, builder)
+			builder.AddRoute("createPet", func(c *echo.Context) error {
+				return c.NoContent(http.StatusCreated)
+			})
+
+			e := echo.New()
+			if err := builder.MountAt(e, "/api"); err != nil {
+				t.Fatal(err)
+			}
+
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequestWithContext(
+				context.Background(),
+				http.MethodPost,
+				"/api/pets",
+				bytes.NewBufferString(tt.body),
+			)
+			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			e.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d, body: %s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+		})
 	}
 }
 
