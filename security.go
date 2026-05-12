@@ -97,13 +97,7 @@ func (security *Security) scheme() (*openapi3.SecurityScheme, error) {
 	return ref.Value, nil
 }
 
-func (builder *RouterBuilder) securityMiddleware(
-	operation *openapi3.Operation,
-	failOnNotFound bool,
-) (echo.MiddlewareFunc, error) {
-	if !failOnNotFound {
-		return nil, nil
-	}
+func (builder *RouterBuilder) securityMiddleware(operation *openapi3.Operation) (echo.MiddlewareFunc, error) {
 	requirements := builder.effectiveSecurityRequirements(operation)
 	if len(requirements) == 0 {
 		return nil, nil

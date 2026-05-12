@@ -16,17 +16,13 @@ type OpenAPIRoute struct {
 	handlers        []echo.HandlerFunc
 	middlewares     []echo.MiddlewareFunc
 	failureHandlers []FailureHandler
-	doValidation    bool
-	doSecurity      bool
 }
 
 func newOpenAPIRoute(method string, path string, operation *openapi3.Operation) *OpenAPIRoute {
 	return &OpenAPIRoute{
-		method:       method,
-		path:         path,
-		operation:    operation,
-		doValidation: true,
-		doSecurity:   true,
+		method:    method,
+		path:      path,
+		operation: operation,
 	}
 }
 
@@ -93,24 +89,6 @@ func (route *OpenAPIRoute) Method() string {
 
 func (route *OpenAPIRoute) Path() string {
 	return route.path
-}
-
-func (route *OpenAPIRoute) DoValidation() bool {
-	return route.doValidation
-}
-
-func (route *OpenAPIRoute) SetDoValidation(doValidation bool) *OpenAPIRoute {
-	route.doValidation = doValidation
-	return route
-}
-
-func (route *OpenAPIRoute) DoSecurity() bool {
-	return route.doSecurity
-}
-
-func (route *OpenAPIRoute) SetDoSecurity(doSecurity bool) *OpenAPIRoute {
-	route.doSecurity = doSecurity
-	return route
 }
 
 func failureMiddleware(handlers []FailureHandler) echo.MiddlewareFunc {

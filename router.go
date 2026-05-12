@@ -31,6 +31,10 @@ type RouterBuilder struct {
 	validationOptions validator.Options
 }
 
+type routeRegistrar interface {
+	AddRoute(route echo.Route) (echo.RouteInfo, error)
+}
+
 func NewRouterBuilder(spec *openapi3.T, options validator.Options) (*RouterBuilder, error) {
 	if spec == nil {
 		return nil, errors.New("openapi spec cannot be nil")
@@ -97,45 +101,74 @@ func (builder *RouterBuilder) Security(name string) *Security {
 
 func (builder *RouterBuilder) CreateRouter() (*echo.Echo, error) {
 	e := echo.New()
-	for _, middleware := range builder.rootMiddlewares {
-		e.Use(middleware)
-	}
-
-	validationMiddleware := builder.validationMiddleware()
-
-	for _, route := range builder.orderedRoutes {
-		middlewares := []echo.MiddlewareFunc{failureMiddleware(route.failureHandlers), metadataMiddleware(route.operation)}
-
-		if len(route.handlers) > 0 {
-			securityMiddleware, err := builder.securityMiddleware(route.operation, route.doSecurity)
-			if err != nil {
-				return nil, err
-			}
-			if securityMiddleware != nil {
-				middlewares = append(middlewares, securityMiddleware)
-			}
-		}
-		if route.doValidation {
-			middlewares = append(middlewares, validationMiddleware)
-		}
-		middlewares = append(middlewares, route.middlewares...)
-
-		handler := notImplementedHandler
-		if len(route.handlers) > 0 {
-			handler = routeHandler(route.handlers)
-		}
-
-		if _, err := e.AddRoute(echo.Route{
-			Method:      route.method,
-			Path:        ToEchoPath(route.path),
-			Name:        route.operation.OperationID,
-			Handler:     handler,
-			Middlewares: middlewares,
-		}); err != nil {
-			return nil, err
-		}
+	if err := builder.Mount(e); err != nil {
+		return nil, err
 	}
 	return e, nil
+}
+
+func (builder *RouterBuilder) Mount(e *echo.Echo) error {
+	if e == nil {
+		return errors.New("echo instance cannot be nil")
+	}
+	return builder.mountGroup(e.Group(""), "")
+}
+
+func (builder *RouterBuilder) MountAt(e *echo.Echo, prefix string) error {
+	if e == nil {
+		return errors.New("echo instance cannot be nil")
+	}
+	return builder.mountGroup(e.Group(prefix), prefix)
+}
+
+func (builder *RouterBuilder) mountGroup(group *echo.Group, prefix string) error {
+	if group == nil {
+		return errors.New("echo group cannot be nil")
+	}
+	for _, middleware := range builder.rootMiddlewares {
+		group.Use(middleware)
+	}
+	group.Use(builder.validationMiddleware(prefix))
+	return builder.addRoutes(group)
+}
+
+func (builder *RouterBuilder) addRoutes(registrar routeRegistrar) error {
+	for _, route := range builder.orderedRoutes {
+		echoRoute, err := builder.echoRoute(route)
+		if err != nil {
+			return err
+		}
+		if _, err := registrar.AddRoute(echoRoute); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (builder *RouterBuilder) echoRoute(route *OpenAPIRoute) (echo.Route, error) {
+	middlewares := []echo.MiddlewareFunc{failureMiddleware(route.failureHandlers), metadataMiddleware(route.operation)}
+
+	securityMiddleware, err := builder.securityMiddleware(route.operation)
+	if err != nil {
+		return echo.Route{}, err
+	}
+	if securityMiddleware != nil {
+		middlewares = append(middlewares, securityMiddleware)
+	}
+	middlewares = append(middlewares, route.middlewares...)
+
+	handler := notImplementedHandler
+	if len(route.handlers) > 0 {
+		handler = routeHandler(route.handlers)
+	}
+
+	return echo.Route{
+		Method:      route.method,
+		Path:        ToEchoPath(route.path),
+		Name:        route.operation.OperationID,
+		Handler:     handler,
+		Middlewares: middlewares,
+	}, nil
 }
 
 func (builder *RouterBuilder) route(operationID string, method string) *OpenAPIRoute {
@@ -200,8 +233,11 @@ func (builder *RouterBuilder) collectRoutes() error {
 	return nil
 }
 
-func (builder *RouterBuilder) validationMiddleware() echo.MiddlewareFunc {
+func (builder *RouterBuilder) validationMiddleware(prefix string) echo.MiddlewareFunc {
 	options := builder.validationOptions
+	if prefix != "" {
+		options.Prefix = prefix
+	}
 	if options.Options.AuthenticationFunc == nil {
 		options.Options.AuthenticationFunc = openapi3filter.NoopAuthenticationFunc
 	}

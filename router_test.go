@@ -196,7 +196,7 @@ func TestValidationRejectsInvalidRequest(t *testing.T) {
 	builder := newTestBuilder(t)
 	routeMiddlewareCalled := false
 	handlerCalled := false
-	builder.GetRoute("createPet").SetDoSecurity(false)
+	addTestSecurity(t, builder)
 	builder.AddRoute("createPet", func(c *echo.Context) error {
 		handlerCalled = true
 		return c.NoContent(http.StatusCreated)
@@ -232,48 +232,14 @@ func TestValidationRejectsInvalidRequest(t *testing.T) {
 	}
 }
 
-func TestValidationCanBeDisabled(t *testing.T) {
+func TestBuilderMountsRoutesAtRootWithRequestLogger(t *testing.T) {
 	t.Parallel()
 
 	builder := newTestBuilder(t)
-	builder.GetRoute("createPet").
-		SetDoSecurity(false).
-		SetDoValidation(false)
+	addTestSecurity(t, builder)
 	builder.AddRoute("createPet", func(c *echo.Context) error {
 		return c.NoContent(http.StatusCreated)
 	})
-	e, err := builder.CreateRouter()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(
-		context.Background(),
-		http.MethodPost,
-		"/pets",
-		bytes.NewBufferString(`{"wrong":"field"}`),
-	)
-	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
-	e.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
-	}
-}
-
-func TestCreatedRouterCanBeMountedAtRootWithRequestLogger(t *testing.T) {
-	t.Parallel()
-
-	builder := newTestBuilder(t)
-	builder.GetRoute("createPet").SetDoSecurity(false)
-	builder.AddRoute("createPet", func(c *echo.Context) error {
-		return c.NoContent(http.StatusCreated)
-	})
-	router, err := builder.CreateRouter()
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	e := echo.New()
 	var logged []middleware.RequestLoggerValues
@@ -287,7 +253,9 @@ func TestCreatedRouterCanBeMountedAtRootWithRequestLogger(t *testing.T) {
 			return nil
 		},
 	}))
-	e.Any("/*", echo.WrapHandler(router))
+	if err := builder.Mount(e); err != nil {
+		t.Fatal(err)
+	}
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(
@@ -311,11 +279,40 @@ func TestCreatedRouterCanBeMountedAtRootWithRequestLogger(t *testing.T) {
 	if got, want := logged[0].URIPath, "/pets"; got != want {
 		t.Fatalf("logged URI path = %q, want %q", got, want)
 	}
-	if got, want := logged[0].RoutePath, "/*"; got != want {
+	if got, want := logged[0].RoutePath, "/pets"; got != want {
 		t.Fatalf("logged route path = %q, want %q", got, want)
 	}
 	if got, want := logged[0].Status, http.StatusCreated; got != want {
 		t.Fatalf("logged status = %d, want %d", got, want)
+	}
+}
+
+func TestBuilderMountsRoutesAtPrefix(t *testing.T) {
+	t.Parallel()
+
+	builder := newTestBuilder(t)
+	addTestSecurity(t, builder)
+	builder.AddRoute("createPet", func(c *echo.Context) error {
+		return c.NoContent(http.StatusCreated)
+	})
+
+	e := echo.New()
+	if err := builder.MountAt(e, "/api"); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		http.MethodPost,
+		"/api/pets",
+		bytes.NewBufferString(`{"name":"fido"}`),
+	)
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
 	}
 }
 
@@ -336,6 +333,7 @@ func TestUnhandledOperationReturns501(t *testing.T) {
 	t.Parallel()
 
 	builder := newTestBuilder(t)
+	addTestSecurity(t, builder)
 	e, err := builder.CreateRouter()
 	if err != nil {
 		t.Fatal(err)
@@ -360,6 +358,7 @@ func TestUnhandledOperationValidatesRequest(t *testing.T) {
 	t.Parallel()
 
 	builder := newTestBuilder(t)
+	addTestSecurity(t, builder)
 	e, err := builder.CreateRouter()
 	if err != nil {
 		t.Fatal(err)
@@ -384,8 +383,8 @@ func TestFailureHandlerHandlesRouteError(t *testing.T) {
 	t.Parallel()
 
 	builder := newTestBuilder(t)
+	addTestSecurity(t, builder)
 	builder.GetRoute("createPet").
-		SetDoSecurity(false).
 		AddHandler(func(_ *echo.Context) error {
 			return echo.NewHTTPError(http.StatusTeapot, "broken")
 		}).
@@ -424,6 +423,17 @@ func newTestBuilder(t *testing.T) *RouterBuilder {
 		t.Fatal(err)
 	}
 	return builder
+}
+
+func addTestSecurity(t *testing.T, builder *RouterBuilder) {
+	t.Helper()
+	if err := builder.Security("api_key").APIKeyHandler(
+		func(*echo.Context, *openapi3.SecurityScheme, []string) error {
+			return nil
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
 }
 
 const testSpec = `
