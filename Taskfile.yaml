@@ -1,0 +1,14 @@
+version: '3'
+
+tasks:
+  test:
+    run: once
+    cmd: go test ./...
+
+  lint:
+    cmd: go tool golangci-lint run
+
+  check:
+    deps:
+      - test
+      - lint
