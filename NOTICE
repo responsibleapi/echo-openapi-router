@@ -1,0 +1,8 @@
+echo-openapi-router
+
+This project includes code and behavior derived from Eclipse Vert.x Web's
+vertx-web-openapi-router module:
+
+https://github.com/vert-x3/vertx-web/tree/master/vertx-web-openapi-router
+
+The upstream project is licensed under the Apache License, Version 2.0.

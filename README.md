@@ -33,3 +33,7 @@ err := builder.Security("api_key").APIKeyHandler(func(c *echo.Context, scheme *o
 ```
 
 Operations without handlers are still mounted and return `501 Not Implemented`, matching the Vert.x module's fallback route behavior.
+
+## License
+
+Licensed under the Apache License, Version 2.0. This project includes code and behavior derived from Eclipse Vert.x Web's `vertx-web-openapi-router` module, which is licensed under the Apache License, Version 2.0.
