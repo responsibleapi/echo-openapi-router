@@ -4,6 +4,16 @@ Echo v5 router builder for OpenAPI 3 contracts, ported from Vert.x Web's `vertx-
 
 It builds Echo routes from OpenAPI operations, converts OpenAPI path parameters (`/pets/{id}`) to Echo path parameters (`/pets/:id`), installs root middleware first, then security checks, request validation, route handlers, and route failure handlers. Request validation is delegated to `github.com/responsibleapi/echo-middleware` at `v1.0.3-responsibleapi.3`.
 
+## Install
+
+```sh
+go get github.com/responsibleapi/echo-openapi-router
+```
+
+```go
+import openapirouter "github.com/responsibleapi/echo-openapi-router"
+```
+
 ```go
 builder, err := openapirouter.LoadFromFile("openapi.yaml")
 if err != nil {
