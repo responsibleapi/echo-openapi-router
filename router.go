@@ -22,18 +22,16 @@ const (
 
 var pathParamRE = regexp.MustCompile(`\{([^{}]+)\}`)
 
-type Option func(*RouterBuilder)
-
 type RouterBuilder struct {
 	spec              *openapi3.T
 	rootMiddlewares   []echo.MiddlewareFunc
 	routes            map[string]*OpenAPIRoute
 	orderedRoutes     []*OpenAPIRoute
 	securityHandlers  map[string][]SecurityHandler
-	validationOptions *validator.Options
+	validationOptions validator.Options
 }
 
-func NewRouterBuilder(spec *openapi3.T, opts ...Option) (*RouterBuilder, error) {
+func NewRouterBuilder(spec *openapi3.T, options validator.Options) (*RouterBuilder, error) {
 	if spec == nil {
 		return nil, errors.New("openapi spec cannot be nil")
 	}
@@ -45,12 +43,10 @@ func NewRouterBuilder(spec *openapi3.T, opts ...Option) (*RouterBuilder, error) 
 	}
 
 	builder := &RouterBuilder{
-		spec:             spec,
-		routes:           make(map[string]*OpenAPIRoute),
-		securityHandlers: make(map[string][]SecurityHandler),
-	}
-	for _, opt := range opts {
-		opt(builder)
+		spec:              spec,
+		routes:            make(map[string]*OpenAPIRoute),
+		securityHandlers:  make(map[string][]SecurityHandler),
+		validationOptions: options,
 	}
 	if err := builder.collectRoutes(); err != nil {
 		return nil, err
@@ -58,18 +54,12 @@ func NewRouterBuilder(spec *openapi3.T, opts ...Option) (*RouterBuilder, error) 
 	return builder, nil
 }
 
-func LoadFromFile(path string, opts ...Option) (*RouterBuilder, error) {
+func LoadFromFile(path string, options validator.Options) (*RouterBuilder, error) {
 	spec, err := openapi3.NewLoader().LoadFromFile(path)
 	if err != nil {
 		return nil, err
 	}
-	return NewRouterBuilder(spec, opts...)
-}
-
-func WithValidationOptions(options validator.Options) Option {
-	return func(builder *RouterBuilder) {
-		builder.validationOptions = &options
-	}
+	return NewRouterBuilder(spec, options)
 }
 
 func (builder *RouterBuilder) GetRoute(operationID string) *OpenAPIRoute {
@@ -211,10 +201,7 @@ func (builder *RouterBuilder) collectRoutes() error {
 }
 
 func (builder *RouterBuilder) validationMiddleware() echo.MiddlewareFunc {
-	options := validator.Options{}
-	if builder.validationOptions != nil {
-		options = *builder.validationOptions
-	}
+	options := builder.validationOptions
 	if options.Options.AuthenticationFunc == nil {
 		options.Options.AuthenticationFunc = openapi3filter.NoopAuthenticationFunc
 	}

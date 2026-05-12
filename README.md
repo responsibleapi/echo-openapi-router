@@ -18,11 +18,12 @@ import (
 
 	openapirouter "github.com/responsibleapi/echo-openapi-router"
 	"github.com/labstack/echo/v5"
+	validator "github.com/responsibleapi/echo-middleware"
 )
 ```
 
 ```go
-builder, err := openapirouter.LoadFromFile("openapi.yaml")
+builder, err := openapirouter.LoadFromFile("openapi.yaml", validator.Options{})
 if err != nil {
 	return err
 }

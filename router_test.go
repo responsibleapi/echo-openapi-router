@@ -12,6 +12,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
+	validator "github.com/responsibleapi/echo-middleware"
 )
 
 func TestToEchoPath(t *testing.T) {
@@ -418,7 +419,7 @@ func newTestBuilder(t *testing.T) *RouterBuilder {
 	if err != nil {
 		t.Fatal(err)
 	}
-	builder, err := NewRouterBuilder(spec)
+	builder, err := NewRouterBuilder(spec, validator.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
