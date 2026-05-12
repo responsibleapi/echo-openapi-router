@@ -95,8 +95,15 @@ func (builder *RouterBuilder) RootHandler(middleware echo.MiddlewareFunc) *Route
 	return builder
 }
 
-func (builder *RouterBuilder) Security(name string) *Security {
-	return &Security{builder: builder, name: name}
+func (builder *RouterBuilder) Security(name string, handler SecurityHandler) *RouterBuilder {
+	if handler == nil {
+		panic(fmt.Sprintf("openapirouter: Security(%q): handler cannot be nil", name))
+	}
+	if _, err := builder.securityScheme(name); err != nil {
+		panic(fmt.Sprintf("openapirouter: Security(%q): %s", name, err))
+	}
+	builder.securityHandlers[name] = append(builder.securityHandlers[name], handler)
+	return builder
 }
 
 func (builder *RouterBuilder) CreateRouter() (*echo.Echo, error) {

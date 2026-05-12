@@ -37,18 +37,13 @@ func TestBuilderCreatesRoutesWithValidationSecurityAndHandlers(t *testing.T) {
 			return next(c)
 		}
 	})
-	err := builder.Security("api_key").APIKeyHandler(
-		func(c *echo.Context, scheme *openapi3.SecurityScheme, _ []string) error {
-			order = append(order, "security")
-			if c.Request().Header.Get(scheme.Name) != "secret" {
-				return echo.NewHTTPError(http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
-			}
-			return nil
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	builder.Security("api_key", func(c *echo.Context, scheme *openapi3.SecurityScheme, _ []string) error {
+		order = append(order, "security")
+		if c.Request().Header.Get(scheme.Name) != "secret" {
+			return echo.NewHTTPError(http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
+		}
+		return nil
+	})
 	builder.AddRoute("createPet", func(c *echo.Context) error {
 		order = append(order, "handler")
 		if c.Get(KeyOperation) == nil {
@@ -158,6 +153,58 @@ func TestAddRoutePanicsForNilHandler(t *testing.T) {
 	}()
 
 	builder.AddRoute("createPet", nil)
+}
+
+func TestSecurityPanicsForNilHandler(t *testing.T) {
+	t.Parallel()
+
+	builder := newTestBuilder(t)
+
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			t.Fatalf("Security() did not panic")
+		}
+		message, ok := recovered.(string)
+		if !ok {
+			t.Fatalf("panic = %#v, want string", recovered)
+		}
+		if !strings.Contains(message, `Security("api_key")`) {
+			t.Fatalf("panic = %q, want security scheme name", message)
+		}
+		if !strings.Contains(message, "handler cannot be nil") {
+			t.Fatalf("panic = %q, want nil handler message", message)
+		}
+	}()
+
+	builder.Security("api_key", nil)
+}
+
+func TestSecurityPanicsForMissingScheme(t *testing.T) {
+	t.Parallel()
+
+	builder := newTestBuilder(t)
+
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			t.Fatalf("Security() did not panic")
+		}
+		message, ok := recovered.(string)
+		if !ok {
+			t.Fatalf("panic = %#v, want string", recovered)
+		}
+		if !strings.Contains(message, `Security("missing")`) {
+			t.Fatalf("panic = %q, want security scheme name", message)
+		}
+		if !strings.Contains(message, `missing security scheme "missing"`) {
+			t.Fatalf("panic = %q, want missing scheme message", message)
+		}
+	}()
+
+	builder.Security("missing", func(*echo.Context, *openapi3.SecurityScheme, []string) error {
+		return nil
+	})
 }
 
 func TestRouteAddHandlerPanicsForNilHandler(t *testing.T) {
@@ -450,13 +497,9 @@ func newTestBuilder(t *testing.T) *RouterBuilder {
 
 func addTestSecurity(t *testing.T, builder *RouterBuilder) {
 	t.Helper()
-	if err := builder.Security("api_key").APIKeyHandler(
-		func(*echo.Context, *openapi3.SecurityScheme, []string) error {
-			return nil
-		},
-	); err != nil {
-		t.Fatal(err)
-	}
+	builder.Security("api_key", func(*echo.Context, *openapi3.SecurityScheme, []string) error {
+		return nil
+	})
 }
 
 const testSpec = `

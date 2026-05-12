@@ -48,7 +48,7 @@ Use `builder.MountAt(e, "/api")` to mount generated routes under a path prefix. 
 Security is configured per OpenAPI security scheme:
 
 ```go
-err := builder.Security("api_key").APIKeyHandler(func(c *echo.Context, scheme *openapi3.SecurityScheme, scopes []string) error {
+builder.Security("api_key", func(c *echo.Context, scheme *openapi3.SecurityScheme, scopes []string) error {
 	if c.Request().Header.Get(scheme.Name) == "" {
 		return echo.NewHTTPError(http.StatusUnauthorized, "missing api key")
 	}

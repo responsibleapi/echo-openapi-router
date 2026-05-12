@@ -1,7 +1,6 @@
 package openapirouter
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -12,87 +11,13 @@ import (
 
 type SecurityHandler func(c *echo.Context, scheme *openapi3.SecurityScheme, scopes []string) error
 
-type Security struct {
-	builder *RouterBuilder
-	name    string
-}
-
-func (security *Security) Handler(handler SecurityHandler) error {
-	if handler == nil {
-		return errors.New("security handler cannot be nil")
+func (builder *RouterBuilder) securityScheme(name string) (*openapi3.SecurityScheme, error) {
+	if builder.spec.Components == nil || builder.spec.Components.SecuritySchemes == nil {
+		return nil, fmt.Errorf("missing security scheme %q", name)
 	}
-	if _, err := security.scheme(); err != nil {
-		return err
-	}
-	security.builder.securityHandlers[security.name] = append(security.builder.securityHandlers[security.name], handler)
-	return nil
-}
-
-func (security *Security) APIKeyHandler(handler SecurityHandler) error {
-	scheme, err := security.scheme()
-	if err != nil {
-		return err
-	}
-	if scheme.Type != "apiKey" {
-		return fmt.Errorf("invalid type for apiKey security scheme %q: %s", security.name, scheme.Type)
-	}
-	if scheme.Name == "" {
-		return fmt.Errorf("apiKey security scheme %q has empty name", security.name)
-	}
-	switch scheme.In {
-	case "header", "query", "cookie":
-	default:
-		return fmt.Errorf("apiKey security scheme %q has invalid in value %q", security.name, scheme.In)
-	}
-	return security.Handler(handler)
-}
-
-func (security *Security) HTTPHandler(schemeName string, handler SecurityHandler) error {
-	scheme, err := security.scheme()
-	if err != nil {
-		return err
-	}
-	if scheme.Type != "http" {
-		return fmt.Errorf("invalid type for http security scheme %q: %s", security.name, scheme.Type)
-	}
-	if scheme.Scheme != schemeName {
-		return fmt.Errorf("invalid scheme for http security scheme %q: %s", security.name, scheme.Scheme)
-	}
-	return security.Handler(handler)
-}
-
-func (security *Security) OAuth2Handler(handler SecurityHandler) error {
-	scheme, err := security.scheme()
-	if err != nil {
-		return err
-	}
-	if scheme.Type != "oauth2" {
-		return fmt.Errorf("invalid type for oauth2 security scheme %q: %s", security.name, scheme.Type)
-	}
-	return security.Handler(handler)
-}
-
-func (security *Security) OpenIDConnectHandler(handler SecurityHandler) error {
-	scheme, err := security.scheme()
-	if err != nil {
-		return err
-	}
-	if scheme.Type != "openIdConnect" {
-		return fmt.Errorf("invalid type for openIdConnect security scheme %q: %s", security.name, scheme.Type)
-	}
-	if scheme.OpenIdConnectUrl == "" {
-		return fmt.Errorf("openIdConnect security scheme %q has empty openIdConnectUrl", security.name)
-	}
-	return security.Handler(handler)
-}
-
-func (security *Security) scheme() (*openapi3.SecurityScheme, error) {
-	if security.builder.spec.Components == nil || security.builder.spec.Components.SecuritySchemes == nil {
-		return nil, fmt.Errorf("missing security scheme %q", security.name)
-	}
-	ref := security.builder.spec.Components.SecuritySchemes[security.name]
+	ref := builder.spec.Components.SecuritySchemes[name]
 	if ref == nil || ref.Value == nil {
-		return nil, fmt.Errorf("missing security scheme %q", security.name)
+		return nil, fmt.Errorf("missing security scheme %q", name)
 	}
 	return ref.Value, nil
 }
