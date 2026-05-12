@@ -1,6 +1,8 @@
 package openapirouter
 
 import (
+	"fmt"
+
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/labstack/echo/v5"
 )
@@ -12,12 +14,13 @@ type OpenAPIRoute struct {
 	path            string
 	operation       *openapi3.Operation
 	handlers        []echo.HandlerFunc
+	middlewares     []echo.MiddlewareFunc
 	failureHandlers []FailureHandler
 	doValidation    bool
 	doSecurity      bool
 }
 
-func newOpenAPIRoute(method, path string, operation *openapi3.Operation) *OpenAPIRoute {
+func newOpenAPIRoute(method string, path string, operation *openapi3.Operation) *OpenAPIRoute {
 	return &OpenAPIRoute{
 		method:       method,
 		path:         path,
@@ -27,15 +30,46 @@ func newOpenAPIRoute(method, path string, operation *openapi3.Operation) *OpenAP
 	}
 }
 
-func (route *OpenAPIRoute) AddHandler(handler echo.HandlerFunc) *OpenAPIRoute {
-	if handler != nil {
-		route.handlers = append(route.handlers, handler)
+func (route *OpenAPIRoute) AddHandler(handler echo.HandlerFunc, middleware ...echo.MiddlewareFunc) *OpenAPIRoute {
+	if route == nil {
+		panic(
+			"openapirouter: OpenAPIRoute.AddHandler called on nil route; " +
+				"get a route from RouterBuilder.GetRoute or RouterBuilder.AddRoute before adding handlers",
+		)
 	}
+	if handler == nil {
+		operationID := "(unknown)"
+		if route.operation != nil && route.operation.OperationID != "" {
+			operationID = route.operation.OperationID
+		}
+		panic(fmt.Sprintf(
+			"openapirouter: AddHandler(%q): handler cannot be nil for %s %s; "+
+				"pass a non-nil echo.HandlerFunc, or leave the route without handlers to return 501 Not Implemented",
+			operationID,
+			route.method,
+			route.path,
+		))
+	}
+	route.Use(middleware...)
+	route.handlers = append(route.handlers, handler)
 	return route
 }
 
 func (route *OpenAPIRoute) Handlers() []echo.HandlerFunc {
 	return append([]echo.HandlerFunc(nil), route.handlers...)
+}
+
+func (route *OpenAPIRoute) Use(middleware ...echo.MiddlewareFunc) *OpenAPIRoute {
+	for _, m := range middleware {
+		if m != nil {
+			route.middlewares = append(route.middlewares, m)
+		}
+	}
+	return route
+}
+
+func (route *OpenAPIRoute) Middlewares() []echo.MiddlewareFunc {
+	return append([]echo.MiddlewareFunc(nil), route.middlewares...)
 }
 
 func (route *OpenAPIRoute) AddFailureHandler(handler FailureHandler) *OpenAPIRoute {

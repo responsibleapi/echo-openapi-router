@@ -8,6 +8,8 @@ require (
 	github.com/responsibleapi/echo-middleware v1.0.3-responsibleapi.3
 )
 
+tool github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+
 require (
 	4d63.com/gocheckcompilerdirectives v1.3.0 // indirect
 	4d63.com/gochecknoglobals v0.2.2 // indirect
@@ -233,5 +235,3 @@ require (
 	mvdan.cc/gofumpt v0.9.2 // indirect
 	mvdan.cc/unparam v0.0.0-20251027182757-5beb8c8f8f15 // indirect
 )
-
-tool github.com/golangci/golangci-lint/v2/cmd/golangci-lint

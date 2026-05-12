@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"slices"
+	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
@@ -72,7 +73,21 @@ func WithValidationOptions(options validator.Options) Option {
 }
 
 func (builder *RouterBuilder) GetRoute(operationID string) *OpenAPIRoute {
-	return builder.routes[operationID]
+	return builder.route(operationID, "GetRoute")
+}
+
+func (builder *RouterBuilder) AddRoute(
+	operationID string,
+	handler echo.HandlerFunc,
+	middleware ...echo.MiddlewareFunc,
+) *OpenAPIRoute {
+	route := builder.route(operationID, "AddRoute")
+	if handler == nil {
+		panic(fmt.Sprintf("openapirouter: AddRoute(%q): handler cannot be nil", operationID))
+	}
+	route.Use(middleware...)
+	route.AddHandler(handler)
+	return route
 }
 
 func (builder *RouterBuilder) Routes() []*OpenAPIRoute {
@@ -99,42 +114,67 @@ func (builder *RouterBuilder) CreateRouter() (*echo.Echo, error) {
 	validationMiddleware := builder.validationMiddleware()
 
 	for _, route := range builder.orderedRoutes {
-		if len(route.handlers) == 0 && len(route.failureHandlers) == 0 {
-			if _, err := e.AddRoute(echo.Route{
-				Method:  route.method,
-				Path:    ToEchoPath(route.path),
-				Name:    route.operation.OperationID,
-				Handler: notImplementedHandler,
-			}); err != nil {
-				return nil, err
-			}
-			continue
-		}
-
 		middlewares := []echo.MiddlewareFunc{failureMiddleware(route.failureHandlers), metadataMiddleware(route.operation)}
 
-		securityMiddleware, err := builder.securityMiddleware(route.operation, route.doSecurity)
-		if err != nil {
-			return nil, err
-		}
-		if securityMiddleware != nil {
-			middlewares = append(middlewares, securityMiddleware)
+		if len(route.handlers) > 0 {
+			securityMiddleware, err := builder.securityMiddleware(route.operation, route.doSecurity)
+			if err != nil {
+				return nil, err
+			}
+			if securityMiddleware != nil {
+				middlewares = append(middlewares, securityMiddleware)
+			}
 		}
 		if route.doValidation {
 			middlewares = append(middlewares, validationMiddleware)
+		}
+		middlewares = append(middlewares, route.middlewares...)
+
+		handler := notImplementedHandler
+		if len(route.handlers) > 0 {
+			handler = routeHandler(route.handlers)
 		}
 
 		if _, err := e.AddRoute(echo.Route{
 			Method:      route.method,
 			Path:        ToEchoPath(route.path),
 			Name:        route.operation.OperationID,
-			Handler:     routeHandler(route.handlers),
+			Handler:     handler,
 			Middlewares: middlewares,
 		}); err != nil {
 			return nil, err
 		}
 	}
 	return e, nil
+}
+
+func (builder *RouterBuilder) route(operationID string, method string) *OpenAPIRoute {
+	if builder == nil {
+		panic(fmt.Sprintf("openapirouter: %s called on nil RouterBuilder", method))
+	}
+	if route := builder.routes[operationID]; route != nil {
+		return route
+	}
+	panic(fmt.Sprintf(
+		"openapirouter: %s(%q): operationId not found in OpenAPI spec; available operationIds: %s",
+		method,
+		operationID,
+		builder.availableOperationIDs(),
+	))
+}
+
+func (builder *RouterBuilder) availableOperationIDs() string {
+	operationIDs := make([]string, 0, len(builder.orderedRoutes))
+	for _, route := range builder.orderedRoutes {
+		if route == nil || route.operation == nil {
+			continue
+		}
+		operationIDs = append(operationIDs, route.operation.OperationID)
+	}
+	if len(operationIDs) == 0 {
+		return "(none)"
+	}
+	return strings.Join(operationIDs, ", ")
 }
 
 func ToEchoPath(openAPIPath string) string {

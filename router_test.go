@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/labstack/echo/v5"
+	"github.com/labstack/echo/v5/middleware"
 )
 
 func TestToEchoPath(t *testing.T) {
@@ -46,12 +48,17 @@ func TestBuilderCreatesRoutesWithValidationSecurityAndHandlers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	builder.GetRoute("createPet").AddHandler(func(c *echo.Context) error {
+	builder.AddRoute("createPet", func(c *echo.Context) error {
 		order = append(order, "handler")
 		if c.Get(KeyOperation) == nil {
 			t.Fatalf("operation metadata not set")
 		}
 		return c.NoContent(http.StatusCreated)
+	}, func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			order = append(order, "route")
+			return next(c)
+		}
 	})
 
 	e, err := builder.CreateRouter()
@@ -73,17 +80,130 @@ func TestBuilderCreatesRoutesWithValidationSecurityAndHandlers(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
 	}
-	if want := []string{"root", "security", "handler"}; !reflect.DeepEqual(order, want) {
+	if want := []string{"root", "security", "route", "handler"}; !reflect.DeepEqual(order, want) {
 		t.Fatalf("order = %#v, want %#v", order, want)
 	}
+}
+
+func TestGetRoutePanicsForUnknownOperationID(t *testing.T) {
+	t.Parallel()
+
+	builder := newTestBuilder(t)
+
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			t.Fatalf("GetRoute() did not panic")
+		}
+		message, ok := recovered.(string)
+		if !ok {
+			t.Fatalf("panic = %#v, want string", recovered)
+		}
+		if !strings.Contains(message, `GetRoute("missingPet")`) {
+			t.Fatalf("panic = %q, want operationId in message", message)
+		}
+		if !strings.Contains(message, "available operationIds: createPet") {
+			t.Fatalf("panic = %q, want available operationIds in message", message)
+		}
+	}()
+
+	builder.GetRoute("missingPet")
+}
+
+func TestAddRoutePanicsForUnknownOperationID(t *testing.T) {
+	t.Parallel()
+
+	builder := newTestBuilder(t)
+
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			t.Fatalf("AddRoute() did not panic")
+		}
+		message, ok := recovered.(string)
+		if !ok {
+			t.Fatalf("panic = %#v, want string", recovered)
+		}
+		if !strings.Contains(message, `AddRoute("missingPet")`) {
+			t.Fatalf("panic = %q, want operationId in message", message)
+		}
+		if !strings.Contains(message, "available operationIds: createPet") {
+			t.Fatalf("panic = %q, want available operationIds in message", message)
+		}
+	}()
+
+	builder.AddRoute("missingPet", func(c *echo.Context) error {
+		return c.NoContent(http.StatusNoContent)
+	})
+}
+
+func TestAddRoutePanicsForNilHandler(t *testing.T) {
+	t.Parallel()
+
+	builder := newTestBuilder(t)
+
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			t.Fatalf("AddRoute() did not panic")
+		}
+		message, ok := recovered.(string)
+		if !ok {
+			t.Fatalf("panic = %#v, want string", recovered)
+		}
+		if !strings.Contains(message, `AddRoute("createPet"): handler cannot be nil`) {
+			t.Fatalf("panic = %q, want nil handler message", message)
+		}
+	}()
+
+	builder.AddRoute("createPet", nil)
+}
+
+func TestRouteAddHandlerPanicsForNilHandler(t *testing.T) {
+	t.Parallel()
+
+	builder := newTestBuilder(t)
+	route := builder.GetRoute("createPet")
+
+	defer func() {
+		recovered := recover()
+		if recovered == nil {
+			t.Fatalf("AddHandler() did not panic")
+		}
+		message, ok := recovered.(string)
+		if !ok {
+			t.Fatalf("panic = %#v, want string", recovered)
+		}
+		for _, want := range []string{
+			`AddHandler("createPet"): handler cannot be nil`,
+			"POST /pets",
+			"pass a non-nil echo.HandlerFunc",
+			"leave the route without handlers to return 501 Not Implemented",
+		} {
+			if !strings.Contains(message, want) {
+				t.Fatalf("panic = %q, want %q", message, want)
+			}
+		}
+	}()
+
+	route.AddHandler(nil)
 }
 
 func TestValidationRejectsInvalidRequest(t *testing.T) {
 	t.Parallel()
 
 	builder := newTestBuilder(t)
-	builder.GetRoute("createPet").SetDoSecurity(false).AddHandler(func(c *echo.Context) error {
+	routeMiddlewareCalled := false
+	handlerCalled := false
+	builder.GetRoute("createPet").SetDoSecurity(false)
+	builder.AddRoute("createPet", func(c *echo.Context) error {
+		handlerCalled = true
 		return c.NoContent(http.StatusCreated)
+	}, func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			routeMiddlewareCalled = true
+			return next(c)
+		}
 	})
 	e, err := builder.CreateRouter()
 	if err != nil {
@@ -103,6 +223,12 @@ func TestValidationRejectsInvalidRequest(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
 	}
+	if routeMiddlewareCalled {
+		t.Fatalf("route middleware was called before request validation rejected the request")
+	}
+	if handlerCalled {
+		t.Fatalf("handler was called after request validation rejected the request")
+	}
 }
 
 func TestValidationCanBeDisabled(t *testing.T) {
@@ -111,10 +237,10 @@ func TestValidationCanBeDisabled(t *testing.T) {
 	builder := newTestBuilder(t)
 	builder.GetRoute("createPet").
 		SetDoSecurity(false).
-		SetDoValidation(false).
-		AddHandler(func(c *echo.Context) error {
-			return c.NoContent(http.StatusCreated)
-		})
+		SetDoValidation(false)
+	builder.AddRoute("createPet", func(c *echo.Context) error {
+		return c.NoContent(http.StatusCreated)
+	})
 	e, err := builder.CreateRouter()
 	if err != nil {
 		t.Fatal(err)
@@ -135,11 +261,68 @@ func TestValidationCanBeDisabled(t *testing.T) {
 	}
 }
 
+func TestCreatedRouterCanBeMountedAtRootWithRequestLogger(t *testing.T) {
+	t.Parallel()
+
+	builder := newTestBuilder(t)
+	builder.GetRoute("createPet").SetDoSecurity(false)
+	builder.AddRoute("createPet", func(c *echo.Context) error {
+		return c.NoContent(http.StatusCreated)
+	})
+	router, err := builder.CreateRouter()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	e := echo.New()
+	var logged []middleware.RequestLoggerValues
+	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+		LogMethod:    true,
+		LogURIPath:   true,
+		LogRoutePath: true,
+		LogStatus:    true,
+		LogValuesFunc: func(_ *echo.Context, values middleware.RequestLoggerValues) error {
+			logged = append(logged, values)
+			return nil
+		},
+	}))
+	e.Any("/*", echo.WrapHandler(router))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		http.MethodPost,
+		"/pets",
+		bytes.NewBufferString(`{"name":"fido"}`),
+	)
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	if len(logged) != 1 {
+		t.Fatalf("logged = %#v, want one request log", logged)
+	}
+	if got, want := logged[0].Method, http.MethodPost; got != want {
+		t.Fatalf("logged method = %q, want %q", got, want)
+	}
+	if got, want := logged[0].URIPath, "/pets"; got != want {
+		t.Fatalf("logged URI path = %q, want %q", got, want)
+	}
+	if got, want := logged[0].RoutePath, "/*"; got != want {
+		t.Fatalf("logged route path = %q, want %q", got, want)
+	}
+	if got, want := logged[0].Status, http.StatusCreated; got != want {
+		t.Fatalf("logged status = %d, want %d", got, want)
+	}
+}
+
 func TestMissingSecurityHandlerFailsCreateRouter(t *testing.T) {
 	t.Parallel()
 
 	builder := newTestBuilder(t)
-	builder.GetRoute("createPet").AddHandler(func(c *echo.Context) error {
+	builder.AddRoute("createPet", func(c *echo.Context) error {
 		return c.NoContent(http.StatusCreated)
 	})
 
@@ -169,6 +352,30 @@ func TestUnhandledOperationReturns501(t *testing.T) {
 
 	if rec.Code != http.StatusNotImplemented {
 		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusNotImplemented, rec.Body.String())
+	}
+}
+
+func TestUnhandledOperationValidatesRequest(t *testing.T) {
+	t.Parallel()
+
+	builder := newTestBuilder(t)
+	e, err := builder.CreateRouter()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		http.MethodPost,
+		"/pets",
+		bytes.NewBufferString(`{"wrong":"field"}`),
+	)
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body: %s", rec.Code, http.StatusBadRequest, rec.Body.String())
 	}
 }
 
